@@ -1,0 +1,35 @@
+name: puebla_yaz
+start_date: "2022-05-21"
+end_date: "2022-05-30"
+season_hint: "early rainy season (late May): warm temperatures (~20-26°C), 
+              moderate-to-high solar radiation but increasingly variable due 
+              to afternoon clouds and rain, moderate cooling demand, frequent 
+              brief showers"
+
+grid_capacity_kwh: 5.5
+
+households:
+  H1:
+    csv: houseteh1_1day
+    panel_area_m2: 5
+    battery_capacity_kwh: 10.0
+    persona: "Large family with heavy AC use in summer. Tends to draw heavily during peak hours."
+  H6:
+    csv: houseteh6_1day
+    panel_area_m2: 3
+    battery_capacity_kwh: 6.0
+    persona: "Small, efficient household. sLow consumption, often has PV surplus to share."
+  H8:
+    csv: houseteh8_1day
+    panel_area_m2: 8
+    battery_capacity_kwh: 15.0
+    persona: "Large household with the biggest solar array. High consumption but also high PV generation."
+
+referee:
+  unit_utility: 1.0
+  share_bonus: 0.5
+  penalty_multiplier: 3.0
+
+pv:
+  efficiency: 0.18
+  daylight_hours: 10.0

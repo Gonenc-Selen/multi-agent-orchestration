@@ -1,0 +1,42 @@
+name: puebla_ilkbahar
+start_date: "2023-03-01"
+end_date: "2023-03-10"
+season_hint: "peak dry season (March): warm dry days (~25°C max), cool nights, 
+              highest solar radiation of the year (~207 W/m²), longest daylight 
+              hours (~9.6h), very low humidity (~46%), minimal rainfall. Mild 
+              energy demand."
+
+grid_capacity_kwh: 5.5
+
+
+households:
+  H1:
+    csv: houseteh1_1day
+    panel_area_m2: 5
+    battery_capacity_kwh: 10.0
+    persona: "Large family with several occupants. Tends to have moderate-to-high consumption. 
+              Small PV system covers only a fraction of needs; usually relies on grid draw."
+  
+  H6:
+    csv: houseteh6_1day
+    panel_area_m2: 3
+    battery_capacity_kwh: 6.0
+    persona: "Small, efficient household with low consumption. Modest PV system covers 
+              part of needs. Occasionally self-sufficient, often needs small grid draw."
+  
+  H8:
+    csv: houseteh8_1day
+    panel_area_m2: 12
+    battery_capacity_kwh: 15.0
+    persona: "Large household with the biggest solar array of the three. High consumption
+              that PV alone cannot cover. Frequently needs grid draw despite having more
+              panels than neighbors."
+
+referee:
+  unit_utility: 1.0
+  share_bonus: 1.5
+  penalty_multiplier: 3.0
+
+pv:
+  efficiency: 0.18
+  daylight_hours: 10.0

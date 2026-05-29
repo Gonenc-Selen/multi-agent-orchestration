@@ -1,0 +1,19 @@
+--- ROUND {{ round_num }} of {{ total_rounds }} ---
+
+TODAY'S ENERGY PICTURE:
+- Consumption need : {{ "%.2f"|format(consumption_kwh) }} kWh
+- PV generation    : {{ "%.2f"|format(pv_kwh) }} kWh
+- PV surplus/deficit: {{ "%.2f"|format(pv_kwh - consumption_kwh) }} kWh
+  (positive = you have excess solar; negative = you need to draw or discharge battery)
+- Season hint: {{ season_hint }}
+
+NEIGHBORS' LAST ROUND INTENTIONS:
+{% for nid, action in neighbor_actions.items() %}
+- {{ nid }}: {% if action %}drew {{ "%.2f"|format(action.draw_kwh) }} kWh, offered {{ "%.2f"|format(action.offer_kwh) }} kWh{% else %}no data yet (first round){% endif %}
+{% endfor %}
+
+YOUR MEMORY (last {{ [neighbor_actions|length, 3]|min }} rounds):
+{{ memory_summary }}
+
+Think carefully: if you and your neighbors all draw heavily, the grid overflows and everyone loses points.
+What is your decision for round {{ round_num }}?

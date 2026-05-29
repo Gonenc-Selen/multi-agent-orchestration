@@ -1,0 +1,14 @@
+{% if not own_history %}
+No history yet.
+{% else %}
+Own history (last {{ own_history|length }} rounds):
+{% for round_num, action, payoff in own_history %}
+  Round {{ round_num }}: drew {{ "%.2f"|format(action.draw_kwh) }} kWh, offered {{ "%.2f"|format(action.offer_kwh) }} kWh, net payoff {{ "%.2f"|format(payoff.net_payoff) }}.
+{% endfor %}
+{% if neighbor_summaries %}
+Neighbor observations:
+{% for nid, summary in neighbor_summaries.items() %}
+  {{ nid }}: {{ summary }}
+{% endfor %}
+{% endif %}
+{% endif %}
