@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.schemas import AgentAction, RoundResult, RunMetrics
+from core.schemas import AgentAction, AgentIntent, RoundResult, RunMetrics
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +42,19 @@ class Logger:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 **action.model_dump(),
+            }
+        )
+
+    def log_intent(self, round_num: int, agent_id: str, intent: AgentIntent) -> None:
+        self._write(
+            {
+                "event": "agent_intent",
+                "ts": _now(),
+                "round": round_num,
+                "agent_id": agent_id,
+                "intent_draw_kwh": intent.intent_draw_kwh,
+                "intent_offer_kwh": intent.intent_offer_kwh,
+                "message": intent.message,
             }
         )
 
@@ -114,7 +127,7 @@ class Logger:
     # ------------------------------------------------------------------
 
     def _write(self, data: dict[str, Any]) -> None:
-        self._jsonl.write(json.dumps(data, default=str) + "\n")
+        self._jsonl.write(json.dumps(data, default=str, ensure_ascii=False) + "\n")
         self._jsonl.flush()
 
 

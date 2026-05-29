@@ -8,12 +8,13 @@ from jinja2 import Environment, FileSystemLoader
 
 from core.llm_client import LLMClient
 from core.memory import MemoryManager
-from core.schemas import AgentAction, RoundContext
+from core.schemas import AgentAction, AgentIntent, RoundContext
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 _DEFAULT_REASONING = "Default action: LLM call failed after retries."
+_DEFAULT_INTENT_MESSAGE = "Bugünkü tüketimimi karşılamak için şebekeden çekiş yapmayı planlıyorum."
 _BATTERY_EFFICIENCY = 0.9
 
 
@@ -27,13 +28,14 @@ class HouseholdAgent:
         battery_capacity_kwh: float,
         persona: str,
         llm_client: LLMClient,
+        tolerance_kwh: float = 0.5,
     ) -> None:
         self.agent_id = agent_id
         self.panel_area_m2 = panel_area_m2
         self.battery_capacity_kwh = battery_capacity_kwh
         self.battery_soc: float = 0.5
         self.persona = persona
-        self.memory = MemoryManager(agent_id=agent_id)
+        self.memory = MemoryManager(agent_id=agent_id, tolerance_kwh=tolerance_kwh)
         self._llm = llm_client
         self._jinja_env = Environment(
             loader=FileSystemLoader(str(_PROMPTS_DIR)),
@@ -41,11 +43,34 @@ class HouseholdAgent:
             lstrip_blocks=True,
         )
 
-    def decide(
+    def declare_intent(
         self, context: RoundContext, scenario_params: dict[str, Any]
+    ) -> AgentIntent:
+        """Render intent prompt, call LLM, return AgentIntent. Falls back to default on failure."""
+        prompt = self._build_intent_prompt(context, scenario_params)
+        try:
+            return self._llm.generate(prompt, AgentIntent)
+        except ValueError as exc:
+            logger.error(
+                "Agent %s intent LLM failure round %d: %s. Using default intent.",
+                self.agent_id,
+                context.round_num,
+                exc,
+            )
+            return AgentIntent(
+                intent_draw_kwh=context.consumption_kwh,
+                intent_offer_kwh=0.0,
+                message=_DEFAULT_INTENT_MESSAGE,
+            )
+
+    def decide(
+        self,
+        context: RoundContext,
+        scenario_params: dict[str, Any],
+        neighbor_intents: dict[str, AgentIntent] | None = None,
     ) -> AgentAction:
         """Render prompts, call LLM, return action. Falls back to default on failure."""
-        prompt = self._build_prompt(context, scenario_params)
+        prompt = self._build_prompt(context, scenario_params, neighbor_intents)
         try:
             action = self._llm.generate(prompt, AgentAction)
         except ValueError as exc:
@@ -87,6 +112,32 @@ class HouseholdAgent:
         return actual
 
     def _build_prompt(
+        self,
+        context: RoundContext,
+        scenario_params: dict[str, Any],
+        neighbor_intents: dict[str, AgentIntent] | None = None,
+    ) -> str:
+        vars_: dict[str, Any] = {
+            "agent_id": self.agent_id,
+            "persona": self.persona,
+            "battery_soc_pct": int(self.battery_soc * 100),
+            "battery_capacity_kwh": self.battery_capacity_kwh,
+            "battery_available_kwh": round(
+                (1.0 - self.battery_soc) * self.battery_capacity_kwh, 2
+            ),
+            "memory_summary": self.memory.summarize(),
+            "neighbor_intents": (
+                {aid: i.model_dump() for aid, i in neighbor_intents.items()}
+                if neighbor_intents else None
+            ),
+            **context.model_dump(),
+            **scenario_params,
+        }
+        system = self._jinja_env.get_template("system.j2").render(**vars_)
+        decision = self._jinja_env.get_template("decision.j2").render(**vars_)
+        return system + "\n\n" + decision
+
+    def _build_intent_prompt(
         self, context: RoundContext, scenario_params: dict[str, Any]
     ) -> str:
         vars_: dict[str, Any] = {
@@ -102,5 +153,5 @@ class HouseholdAgent:
             **scenario_params,
         }
         system = self._jinja_env.get_template("system.j2").render(**vars_)
-        decision = self._jinja_env.get_template("decision.j2").render(**vars_)
-        return system + "\n\n" + decision
+        intent = self._jinja_env.get_template("intent.j2").render(**vars_)
+        return system + "\n\n" + intent

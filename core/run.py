@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -42,6 +43,7 @@ def _load_scenario(path: Path) -> ScenarioConfig:
 
 def _build_agents(scenario: ScenarioConfig) -> list[HouseholdAgent]:
     agents = []
+    tolerance = scenario.promise_keeping.tolerance_kwh
     for agent_id, cfg in scenario.households.items():
         agents.append(
             HouseholdAgent(
@@ -50,6 +52,7 @@ def _build_agents(scenario: ScenarioConfig) -> list[HouseholdAgent]:
                 battery_capacity_kwh=cfg.battery_capacity_kwh,
                 persona=cfg.persona,
                 llm_client=llm_client,
+                tolerance_kwh=tolerance,
             )
         )
     return agents
@@ -64,6 +67,7 @@ def _build_scenario_params(scenario: ScenarioConfig) -> dict[str, Any]:
         "penalty_multiplier": ref.penalty_multiplier,
         "num_agents": len(scenario.households),
         "season_hint": scenario.season_hint,
+        "communication_mode": scenario.communication_mode,
         "total_rounds": 0,  # set after data loaded
     }
 
@@ -83,10 +87,50 @@ def _load_data(scenario: ScenarioConfig) -> pd.DataFrame:
     df = df[(df["date"] >= start) & (df["date"] <= end)].reset_index(drop=True)
 
     if df.empty:
-        log.error("No data rows for %s → %s", start.date(), end.date())
+        log.error("No data rows for %s -> %s", start.date(), end.date())
         sys.exit(1)
 
     return df
+
+
+def _print_promise_summary(
+    metrics: "RunMetrics",  # type: ignore[name-defined]  # noqa: F821
+    intent_log: dict,
+    results: list,
+    tolerance_kwh: float,
+) -> None:
+    """Print V2 promise-keeping summary to console."""
+    agent_rates = {
+        aid: m.promise_kept_rate
+        for aid, m in metrics.agent_metrics.items()
+    }
+    avg_rate = sum(agent_rates.values()) / len(agent_rates) if agent_rates else 0.0
+    least_faithful = min(agent_rates, key=lambda a: agent_rates[a])
+
+    # Pearson correlation: intent_draw vs actual_draw across all agents & rounds
+    intent_draws: list[float] = []
+    actual_draws: list[float] = []
+    actual_by_round = {
+        r.round_num: {p.agent_id: p.draw_kwh for p in r.payoffs}
+        for r in results
+    }
+    for round_num, agent_intents in intent_log.items():
+        actuals = actual_by_round.get(round_num, {})
+        for aid, intent in agent_intents.items():
+            if aid in actuals:
+                intent_draws.append(intent.intent_draw_kwh)
+                actual_draws.append(actuals[aid])
+
+    if len(intent_draws) >= 2:
+        corr = float(np.corrcoef(intent_draws, actual_draws)[0, 1])
+    else:
+        corr = float("nan")
+
+    print("\n=== V2 Promise-Keeping Summary ===")
+    print(f"Avg promise_kept_rate (community): {avg_rate:.2f}")
+    print(f"Least faithful agent             : {least_faithful} (rate: {agent_rates[least_faithful]:.2f})")
+    print(f"Intent-action correlation        : r={corr:.2f}  (Pearson, intent_draw vs actual_draw)")
+    print(f"Tolerance threshold              : {tolerance_kwh} kWh")
 
 
 def run_once(scenario_path: Path, smoke: bool = False) -> None:
@@ -119,21 +163,25 @@ def run_once(scenario_path: Path, smoke: bool = False) -> None:
             {p.agent_id: round(p.net_payoff, 2) for p in result.payoffs},
         )
 
-    # Compute KPIs
     agent_states = engine.agent_states
-    pv_total = sum(
-        df[f"{a.agent_id.lower()}_pv_kwh"].sum() for a in agents
+    pv_total = sum(df[f"{a.agent_id.lower()}_pv_kwh"].sum() for a in agents)
+    consumption_total = sum(df[f"{a.agent_id.lower()}_kwh"].sum() for a in agents)
+
+    metrics = compute_run_metrics(
+        results,
+        agent_states,
+        pv_total,
+        consumption_total,
+        intent_log=engine.intent_log if engine.intent_log else None,
+        tolerance_kwh=scenario.promise_keeping.tolerance_kwh,
+        communication_mode=scenario.communication_mode,
     )
-    consumption_total = sum(
-        df[f"{a.agent_id.lower()}_kwh"].sum() for a in agents
-    )
-    metrics = compute_run_metrics(results, agent_states, pv_total, consumption_total)
 
     logger.write_results_csv()
     logger.write_metrics_json(metrics)
     logger.close()
 
-    log.info("Run complete → %s", run_dir)
+    log.info("Run complete -> %s", run_dir)
     log.info(
         "Total welfare=%.2f  violations=%d  gini=%.3f  cost=$%.4f",
         metrics.total_welfare,
@@ -141,6 +189,14 @@ def run_once(scenario_path: Path, smoke: bool = False) -> None:
         metrics.gini_coefficient,
         llm_client.estimated_cost_usd,
     )
+
+    if scenario.communication_mode == "v2" and engine.intent_log:
+        _print_promise_summary(
+            metrics,
+            engine.intent_log,
+            results,
+            scenario.promise_keeping.tolerance_kwh,
+        )
 
 
 def main() -> None:

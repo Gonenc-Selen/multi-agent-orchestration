@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.schemas import AgentAction, AgentPayoff
+from core.schemas import AgentAction, AgentIntent, AgentPayoff
 
 _DEFAULT_K = 3
 
@@ -8,12 +8,16 @@ _DEFAULT_K = 3
 class MemoryManager:
     """Sliding window memory for a single agent. No LLM calls — template-based summaries."""
 
-    def __init__(self, agent_id: str, k: int = _DEFAULT_K) -> None:
+    def __init__(
+        self, agent_id: str, k: int = _DEFAULT_K, tolerance_kwh: float = 0.5
+    ) -> None:
         self.agent_id = agent_id
         self.k = k
+        self._tolerance_kwh = tolerance_kwh
         self._own_history: list[tuple[int, AgentAction, AgentPayoff]] = []
         self.neighbor_summaries: dict[str, str] = {}
-        self._neighbor_history: dict[str, list[tuple[int, float]]] = {}
+        # (round_num, intent_draw | None, actual_draw)
+        self._neighbor_history: dict[str, list[tuple[int, float | None, float]]] = {}
 
     def update(
         self,
@@ -21,6 +25,7 @@ class MemoryManager:
         action: AgentAction,
         payoff: AgentPayoff,
         neighbor_actions: dict[str, AgentAction],
+        neighbor_intents: dict[str, AgentIntent] | None = None,
     ) -> None:
         """Record this round's outcome and trim to K window."""
         self._own_history.append((round_num, action, payoff))
@@ -30,7 +35,10 @@ class MemoryManager:
         for nid, naction in neighbor_actions.items():
             if nid not in self._neighbor_history:
                 self._neighbor_history[nid] = []
-            self._neighbor_history[nid].append((round_num, naction.draw_kwh))
+            intent_draw: float | None = None
+            if neighbor_intents and nid in neighbor_intents:
+                intent_draw = neighbor_intents[nid].intent_draw_kwh
+            self._neighbor_history[nid].append((round_num, intent_draw, naction.draw_kwh))
             if len(self._neighbor_history[nid]) > self.k:
                 self._neighbor_history[nid] = self._neighbor_history[nid][-self.k :]
 
@@ -65,8 +73,24 @@ class MemoryManager:
         for nid, history in self._neighbor_history.items():
             if not history:
                 continue
-            draws = [d for _, d in history]
-            avg = sum(draws) / len(draws)
-            self.neighbor_summaries[nid] = (
-                f"avg draw {avg:.2f} kWh over last {len(draws)} round(s)"
-            )
+            actual_draws = [a for _, _, a in history]
+            intent_draws = [i for _, i, _ in history if i is not None]
+            avg_actual = sum(actual_draws) / len(actual_draws)
+
+            if intent_draws and len(intent_draws) == len(actual_draws):
+                avg_intent = sum(intent_draws) / len(intent_draws)
+                avg_gap = sum(
+                    abs(a - i) for i, a in zip(intent_draws, actual_draws)
+                ) / len(intent_draws)
+                faithfulness = (
+                    "yüksek" if avg_gap <= self._tolerance_kwh else "düşük"
+                )
+                self.neighbor_summaries[nid] = (
+                    f"avg draw {avg_actual:.2f} kWh, avg intent {avg_intent:.2f} kWh"
+                    f" — söz tutma oranı {faithfulness}"
+                    f" (ort. sapma {avg_gap:.2f} kWh, eşik {self._tolerance_kwh} kWh)"
+                )
+            else:
+                self.neighbor_summaries[nid] = (
+                    f"avg draw {avg_actual:.2f} kWh over last {len(actual_draws)} round(s)"
+                )

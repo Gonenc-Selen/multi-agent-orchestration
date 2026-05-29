@@ -1,0 +1,23 @@
+--- ROUND {{ round_num }} of {{ total_rounds }} — NİYET BİLDİRİMİ ---
+
+Henüz komşularının niyetlerini bilmiyorsun. Sadece kendi enerji durumuna göre bu tur için niyetini beyan et.
+
+BUGÜNKÜ ENERJİ DURUMUN:
+- Tüketim ihtiyacı  : {{ "%.2f"|format(consumption_kwh) }} kWh
+- PV üretimi        : {{ "%.2f"|format(pv_kwh) }} kWh
+- PV fazlası/açığı  : {{ "%.2f"|format(pv_kwh - consumption_kwh) }} kWh
+  (pozitif = güneş fazlası var; negatif = şebekeden çekiş veya batarya gerekli)
+- Batarya doluluk   : %{{ battery_soc_pct }} (kullanılabilir: {{ "%.2f"|format(battery_available_kwh) }} kWh)
+- Mevsim            : {{ season_hint }}
+
+GEÇMİŞ TURLAR (hafızan):
+{{ memory_summary }}
+
+Niyet beyanın komşularına gösterilecek — ama bağlayıcı değil, farklı davranabilirsin.
+Şebeke kapasitesi sınırlı; hep birlikte fazla çekersek hepimiz ceza yer.
+
+Terminoloji: "şebeke çekişi" (grid draw), "paylaşım teklifi" (offer), "batarya" (battery),
+"ceza" (penalty), "kapasite" (capacity), "tüketim" (consumption),
+"PV üretimi" (PV generation), "komşular" (neighbors). Sayılar ve kWh İngilizce kalır.
+
+Bu tur için niyetini beyan et (message alanı 2-3 cümle Türkçe, doğal ev sahibi sesi):

@@ -17,3 +17,25 @@ YOUR MEMORY (last {{ [neighbor_actions|length, 3]|min }} rounds):
 
 Think carefully: if you and your neighbors all draw heavily, the grid overflows and everyone loses points.
 What is your decision for round {{ round_num }}?
+
+{% if neighbor_intents %}
+---
+KOMŞU NİYET BİLDİRİMLERİ (bu tur, karar öncesi):
+{% for nid, intent in neighbor_intents.items() %}
+- {{ nid }}: niyet çekiş={{ "%.2f"|format(intent.intent_draw_kwh) }} kWh, niyet teklif={{ "%.2f"|format(intent.intent_offer_kwh) }} kWh
+  Mesaj: "{{ intent.message }}"
+{% endfor %}
+Uyarı: Bu niyetler bağlayıcı değildir — komşular farklı davranabilir.
+---
+{% endif %}
+
+---
+IMPORTANT — Output language:
+Your reasoning field MUST be written in Turkish (Türkçe). Use natural, fluent Turkish as if a household resident is thinking aloud. Keep 2-4 sentences.
+Use this terminology consistently:
+- "şebeke çekişi" (grid draw), "paylaşım teklifi" (offer), "batarya" (battery)
+- "ceza" (penalty), "kapasite" (capacity), "tüketim" (consumption)
+- "PV üretimi" (PV generation), "şebeke" (grid), "komşular" (neighbors)
+- Keep "kWh" as-is (international unit)
+Numbers, units, JSON field names stay as English/standard. Only the reasoning content is Turkish.
+---

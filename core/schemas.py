@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -24,6 +25,27 @@ class AgentAction(BaseModel):
     def reasoning_not_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("reasoning must not be empty")
+        return v
+
+
+class AgentIntent(BaseModel):
+    intent_draw_kwh: float
+    intent_offer_kwh: float
+    message: str
+
+    @field_validator("intent_draw_kwh", "intent_offer_kwh")
+    @classmethod
+    def must_be_non_negative(cls, v: float, info: object) -> float:
+        if v < 0:
+            field = getattr(info, "field_name", "field")
+            raise ValueError(f"{field} must be >= 0, got {v}")
+        return v
+
+    @field_validator("message")
+    @classmethod
+    def message_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("message must not be empty")
         return v
 
 
@@ -68,6 +90,7 @@ class AgentIndividualMetrics(BaseModel):
     net_profit: float
     total_offered_kwh: float
     violation_contribution_kwh: float
+    promise_kept_rate: float = 1.0
 
 
 class RunMetrics(BaseModel):
@@ -77,6 +100,7 @@ class RunMetrics(BaseModel):
     gini_coefficient: float
     self_sufficiency_ratio: float
     agent_metrics: dict[str, AgentIndividualMetrics]
+    communication_mode: str = "v1"
 
 
 class HouseholdConfig(BaseModel):
@@ -103,6 +127,12 @@ class PVConfig(BaseModel):
     daylight_hours: float = Field(default=10.0, gt=0, le=24)
 
 
+class PromiseKeepingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tolerance_kwh: float = Field(default=0.5, gt=0)
+
+
 class ScenarioConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -114,3 +144,5 @@ class ScenarioConfig(BaseModel):
     households: dict[str, HouseholdConfig] = Field(min_length=1)
     referee: RefereeConfig = Field(default_factory=RefereeConfig)
     pv: PVConfig = Field(default_factory=PVConfig)
+    communication_mode: Literal["v1", "v2"] = "v1"
+    promise_keeping: PromiseKeepingConfig = Field(default_factory=PromiseKeepingConfig)

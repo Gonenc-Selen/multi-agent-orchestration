@@ -1,4 +1,10 @@
-from core.schemas import AgentIndividualMetrics, AgentState, RoundResult, RunMetrics
+from core.schemas import (
+    AgentIndividualMetrics,
+    AgentIntent,
+    AgentState,
+    RoundResult,
+    RunMetrics,
+)
 
 
 def gini_coefficient(values: list[float]) -> float:
@@ -33,6 +39,9 @@ def compute_run_metrics(
     agent_states: list[AgentState],
     pv_total: float,
     consumption_total: float,
+    intent_log: dict[int, dict[str, AgentIntent]] | None = None,
+    tolerance_kwh: float = 0.5,
+    communication_mode: str = "v1",
 ) -> RunMetrics:
     """Aggregate KPIs for a completed run."""
     violation_count, violation_avg = capacity_violations(results)
@@ -41,6 +50,20 @@ def compute_run_metrics(
     total_welfare = sum(net_payoffs)
     gini = gini_coefficient(net_payoffs)
     ss_ratio = self_sufficiency_ratio(pv_total, consumption_total)
+
+    # promise_kept_rate: per-agent, based on intent vs actual draw
+    promise_kept: dict[str, list[bool]] = {s.agent_id: [] for s in agent_states}
+    if intent_log:
+        actual_by_round: dict[int, dict[str, float]] = {
+            r.round_num: {p.agent_id: p.draw_kwh for p in r.payoffs}
+            for r in results
+        }
+        for round_num, agent_intents in intent_log.items():
+            actuals = actual_by_round.get(round_num, {})
+            for aid, intent in agent_intents.items():
+                if aid in actuals:
+                    kept = abs(intent.intent_draw_kwh - actuals[aid]) < tolerance_kwh
+                    promise_kept[aid].append(kept)
 
     agent_metrics: dict[str, AgentIndividualMetrics] = {}
     for state in agent_states:
@@ -58,10 +81,13 @@ def compute_run_metrics(
             for p in r.payoffs
             if p.agent_id == aid
         )
+        kept_list = promise_kept[aid]
+        pkr = sum(kept_list) / len(kept_list) if kept_list else 1.0
         agent_metrics[aid] = AgentIndividualMetrics(
             net_profit=state.total_net_payoff,
             total_offered_kwh=total_offered,
             violation_contribution_kwh=violation_contrib,
+            promise_kept_rate=pkr,
         )
 
     return RunMetrics(
@@ -71,4 +97,5 @@ def compute_run_metrics(
         gini_coefficient=gini,
         self_sufficiency_ratio=ss_ratio,
         agent_metrics=agent_metrics,
+        communication_mode=communication_mode,
     )
