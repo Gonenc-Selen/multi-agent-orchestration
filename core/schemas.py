@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_NEGOTIATION_CATEGORIES = Literal[
+    "coordination", "offer_request", "offer_proposal",
+    "warning", "agreement", "rejection", "other"
+]
 
 
 class AgentAction(BaseModel):
@@ -47,6 +52,39 @@ class AgentIntent(BaseModel):
         if not v.strip():
             raise ValueError("message must not be empty")
         return v
+
+
+class NegotiationOutput(BaseModel):
+    """LLM output schema for negotiation — only these 3 fields."""
+    to_agent: str
+    category: _NEGOTIATION_CATEGORIES = "other"
+    message: str
+
+    @field_validator("to_agent", "message")
+    @classmethod
+    def not_empty(cls, v: str, info: object) -> str:
+        if not v.strip():
+            field = getattr(info, "field_name", "field")
+            raise ValueError(f"{field} must not be empty")
+        return v
+
+
+class NegotiationMessage(BaseModel):
+    """Full negotiation record — constructed by Python, never sent to LLM as schema."""
+    model_config = ConfigDict(extra="forbid")
+
+    round_num: int
+    negotiation_round: int
+    from_agent: str = Field(min_length=1)
+    to_agent: str = Field(min_length=1)
+    category: _NEGOTIATION_CATEGORIES = "other"
+    message: str
+
+    @model_validator(mode="after")
+    def different_agents(self) -> "NegotiationMessage":
+        if self.from_agent == self.to_agent:
+            raise ValueError("to_agent must differ from from_agent")
+        return self
 
 
 class RoundContext(BaseModel):
@@ -101,6 +139,7 @@ class RunMetrics(BaseModel):
     self_sufficiency_ratio: float
     agent_metrics: dict[str, AgentIndividualMetrics]
     communication_mode: str = "v1"
+    negotiation_message_count: int = 0
 
 
 class HouseholdConfig(BaseModel):
@@ -144,5 +183,6 @@ class ScenarioConfig(BaseModel):
     households: dict[str, HouseholdConfig] = Field(min_length=1)
     referee: RefereeConfig = Field(default_factory=RefereeConfig)
     pv: PVConfig = Field(default_factory=PVConfig)
-    communication_mode: Literal["v1", "v2"] = "v1"
+    communication_mode: Literal["v1", "v2", "v3"] = "v1"
     promise_keeping: PromiseKeepingConfig = Field(default_factory=PromiseKeepingConfig)
+    negotiation_rounds: int = Field(default=3, ge=1, le=5)

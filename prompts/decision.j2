@@ -29,6 +29,16 @@ Uyarı: Bu niyetler bağlayıcı değildir — komşular farklı davranabilir.
 ---
 {% endif %}
 
+{% if negotiation_history %}
+---
+MÜZAKERE GEÇMİŞİ (bu tur, karar öncesi — sadece senin gördüklerin):
+{% for msg in negotiation_history %}
+- Tur {{ msg.negotiation_round }}, {{ msg.from_agent }} -> {{ msg.to_agent }} [{{ msg.category }}]: "{{ msg.message }}"
+{% endfor %}
+Uyarı: Müzakere mesajları bağlayıcı değildir.
+---
+{% endif %}
+
 ---
 IMPORTANT — Output language:
 Your reasoning field MUST be written in Turkish (Türkçe). Use natural, fluent Turkish as if a household resident is thinking aloud. Keep 2-4 sentences.

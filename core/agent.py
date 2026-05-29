@@ -8,13 +8,20 @@ from jinja2 import Environment, FileSystemLoader
 
 from core.llm_client import LLMClient
 from core.memory import MemoryManager
-from core.schemas import AgentAction, AgentIntent, RoundContext
+from core.schemas import (
+    AgentAction,
+    AgentIntent,
+    NegotiationMessage,
+    NegotiationOutput,
+    RoundContext,
+)
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 _DEFAULT_REASONING = "Default action: LLM call failed after retries."
 _DEFAULT_INTENT_MESSAGE = "Bugünkü tüketimimi karşılamak için şebekeden çekiş yapmayı planlıyorum."
+_DEFAULT_NEG_MESSAGE = "Bu turda şebeke kapasitesini aşmamak için birlikte dengeli hareket edelim."
 _BATTERY_EFFICIENCY = 0.9
 
 
@@ -53,9 +60,7 @@ class HouseholdAgent:
         except ValueError as exc:
             logger.error(
                 "Agent %s intent LLM failure round %d: %s. Using default intent.",
-                self.agent_id,
-                context.round_num,
-                exc,
+                self.agent_id, context.round_num, exc,
             )
             return AgentIntent(
                 intent_draw_kwh=context.consumption_kwh,
@@ -63,22 +68,49 @@ class HouseholdAgent:
                 message=_DEFAULT_INTENT_MESSAGE,
             )
 
+    def send_negotiation_message(
+        self,
+        context: RoundContext,
+        negotiation_round: int,
+        my_intent: AgentIntent,
+        neighbor_intents: dict[str, AgentIntent],
+        my_negotiation_history: list[NegotiationMessage],
+        scenario_params: dict[str, Any],
+    ) -> NegotiationOutput:
+        """Render negotiation prompt, call LLM, return NegotiationOutput."""
+        prompt = self._build_negotiation_prompt(
+            context, negotiation_round, my_intent,
+            neighbor_intents, my_negotiation_history, scenario_params,
+        )
+        try:
+            return self._llm.generate(prompt, NegotiationOutput)
+        except ValueError as exc:
+            logger.error(
+                "Agent %s negotiation LLM failure round %d neg %d: %s. Using default.",
+                self.agent_id, context.round_num, negotiation_round, exc,
+            )
+            other = list(neighbor_intents.keys())
+            return NegotiationOutput(
+                to_agent=other[0] if other else self.agent_id,
+                category="other",
+                message=_DEFAULT_NEG_MESSAGE,
+            )
+
     def decide(
         self,
         context: RoundContext,
         scenario_params: dict[str, Any],
         neighbor_intents: dict[str, AgentIntent] | None = None,
+        negotiation_history: list[NegotiationMessage] | None = None,
     ) -> AgentAction:
         """Render prompts, call LLM, return action. Falls back to default on failure."""
-        prompt = self._build_prompt(context, scenario_params, neighbor_intents)
+        prompt = self._build_prompt(context, scenario_params, neighbor_intents, negotiation_history)
         try:
             action = self._llm.generate(prompt, AgentAction)
         except ValueError as exc:
             logger.error(
                 "Agent %s LLM failure round %d: %s. Using default action.",
-                self.agent_id,
-                context.round_num,
-                exc,
+                self.agent_id, context.round_num, exc,
             )
             action = AgentAction(
                 draw_kwh=context.consumption_kwh,
@@ -95,9 +127,7 @@ class HouseholdAgent:
         if actual < store_kwh:
             logger.warning(
                 "Agent %s: store_kwh %.2f clipped to %.2f (battery full).",
-                self.agent_id,
-                store_kwh,
-                actual,
+                self.agent_id, store_kwh, actual,
             )
         self.battery_soc += (actual * _BATTERY_EFFICIENCY) / self.battery_capacity_kwh
         self.battery_soc = min(1.0, self.battery_soc)
@@ -111,11 +141,16 @@ class HouseholdAgent:
         self.battery_soc = max(0.0, self.battery_soc)
         return actual
 
+    # ------------------------------------------------------------------
+    # Prompt builders
+    # ------------------------------------------------------------------
+
     def _build_prompt(
         self,
         context: RoundContext,
         scenario_params: dict[str, Any],
         neighbor_intents: dict[str, AgentIntent] | None = None,
+        negotiation_history: list[NegotiationMessage] | None = None,
     ) -> str:
         vars_: dict[str, Any] = {
             "agent_id": self.agent_id,
@@ -129,6 +164,10 @@ class HouseholdAgent:
             "neighbor_intents": (
                 {aid: i.model_dump() for aid, i in neighbor_intents.items()}
                 if neighbor_intents else None
+            ),
+            "negotiation_history": (
+                [m.model_dump() for m in negotiation_history]
+                if negotiation_history else None
             ),
             **context.model_dump(),
             **scenario_params,
@@ -155,3 +194,33 @@ class HouseholdAgent:
         system = self._jinja_env.get_template("system.j2").render(**vars_)
         intent = self._jinja_env.get_template("intent.j2").render(**vars_)
         return system + "\n\n" + intent
+
+    def _build_negotiation_prompt(
+        self,
+        context: RoundContext,
+        negotiation_round: int,
+        my_intent: AgentIntent,
+        neighbor_intents: dict[str, AgentIntent],
+        my_negotiation_history: list[NegotiationMessage],
+        scenario_params: dict[str, Any],
+    ) -> str:
+        available_targets = [aid for aid in neighbor_intents]
+        vars_: dict[str, Any] = {
+            "agent_id": self.agent_id,
+            "persona": self.persona,
+            "battery_soc_pct": int(self.battery_soc * 100),
+            "battery_capacity_kwh": self.battery_capacity_kwh,
+            "battery_available_kwh": round(
+                (1.0 - self.battery_soc) * self.battery_capacity_kwh, 2
+            ),
+            "negotiation_round": negotiation_round,
+            "my_intent": my_intent.model_dump(),
+            "neighbor_intents": {aid: i.model_dump() for aid, i in neighbor_intents.items()},
+            "my_negotiation_history": [m.model_dump() for m in my_negotiation_history],
+            "available_targets": available_targets,
+            **context.model_dump(),
+            **scenario_params,
+        }
+        system = self._jinja_env.get_template("system.j2").render(**vars_)
+        negotiation = self._jinja_env.get_template("negotiation.j2").render(**vars_)
+        return system + "\n\n" + negotiation

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from core.schemas import AgentAction, AgentIntent, RoundResult, RunMetrics
+from core.schemas import AgentAction, AgentIntent, NegotiationMessage, RoundResult, RunMetrics
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,20 @@ class Logger:
                 "intent_draw_kwh": intent.intent_draw_kwh,
                 "intent_offer_kwh": intent.intent_offer_kwh,
                 "message": intent.message,
+            }
+        )
+
+    def log_negotiation(self, msg: NegotiationMessage) -> None:
+        self._write(
+            {
+                "event": "negotiation_message",
+                "ts": _now(),
+                "round": msg.round_num,
+                "negotiation_round": msg.negotiation_round,
+                "from_agent": msg.from_agent,
+                "to_agent": msg.to_agent,
+                "category": msg.category,
+                "message": msg.message,
             }
         )
 

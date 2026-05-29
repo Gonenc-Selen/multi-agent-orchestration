@@ -2,6 +2,7 @@ from core.schemas import (
     AgentIndividualMetrics,
     AgentIntent,
     AgentState,
+    NegotiationMessage,
     RoundResult,
     RunMetrics,
 )
@@ -42,6 +43,7 @@ def compute_run_metrics(
     intent_log: dict[int, dict[str, AgentIntent]] | None = None,
     tolerance_kwh: float = 0.5,
     communication_mode: str = "v1",
+    negotiation_log: dict[int, list[NegotiationMessage]] | None = None,
 ) -> RunMetrics:
     """Aggregate KPIs for a completed run."""
     violation_count, violation_avg = capacity_violations(results)
@@ -90,6 +92,11 @@ def compute_run_metrics(
             promise_kept_rate=pkr,
         )
 
+    neg_count = (
+        sum(len(msgs) for msgs in negotiation_log.values())
+        if negotiation_log else 0
+    )
+
     return RunMetrics(
         total_welfare=total_welfare,
         capacity_violation_count=violation_count,
@@ -98,4 +105,5 @@ def compute_run_metrics(
         self_sufficiency_ratio=ss_ratio,
         agent_metrics=agent_metrics,
         communication_mode=communication_mode,
+        negotiation_message_count=neg_count,
     )

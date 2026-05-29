@@ -1,0 +1,30 @@
+--- ROUND {{ round_num }} of {{ total_rounds }} — MÜZAKERE TURU {{ negotiation_round }} of {{ negotiation_rounds }} ---
+
+Bir komşuna mesaj göndereceksin. Hedefi ve içeriği sen belirle.
+Kapsam serbest: koordinasyon önerebilir, paylaşım isteyebilir, uyarı yapabilir, anlaşabilirsin.
+
+SENİN NİYETİN (bu tur):
+- Niyet çekiş : {{ "%.2f"|format(my_intent.intent_draw_kwh) }} kWh
+- Niyet teklif: {{ "%.2f"|format(my_intent.intent_offer_kwh) }} kWh
+
+KOMŞULARIN NİYETLERİ:
+{% for nid, intent in neighbor_intents.items() %}
+- {{ nid }}: niyet çekiş={{ "%.2f"|format(intent.intent_draw_kwh) }} kWh, niyet teklif={{ "%.2f"|format(intent.intent_offer_kwh) }} kWh
+  Mesaj: "{{ intent.message }}"
+{% endfor %}
+
+{% if my_negotiation_history %}
+ÖNCEKİ MÜZAKERE MESAJLARIN (bu tur, sadece senin gördüklerin):
+{% for msg in my_negotiation_history %}
+- Tur {{ msg.negotiation_round }}, {{ msg.from_agent }} -> {{ msg.to_agent }} [{{ msg.category }}]: "{{ msg.message }}"
+{% endfor %}
+{% endif %}
+
+Mesaj hedefi olarak şu ajanlardan birini seç: {{ available_targets | join(", ") }}
+Mesajın 2-3 cümle Türkçe olsun, doğal sohbet dili kullan.
+
+Terminoloji: "şebeke çekişi" (grid draw), "paylaşım teklifi" (offer), "batarya" (battery),
+"ceza" (penalty), "kapasite" (capacity), "tüketim" (consumption),
+"PV üretimi" (PV generation), "komşular" (neighbors). Sayılar ve kWh İngilizce kalır.
+
+to_agent alanı için yalnızca şu değerlerden birini kullan: {{ available_targets | join(", ") }}

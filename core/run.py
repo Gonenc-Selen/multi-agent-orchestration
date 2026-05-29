@@ -17,12 +17,14 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from collections import Counter
+
 from core.agent import HouseholdAgent
 from core.llm_client import llm_client
 from core.logger import Logger
 from core.metrics import compute_run_metrics
 from core.round_engine import RoundEngine
-from core.schemas import ScenarioConfig
+from core.schemas import NegotiationMessage, RunMetrics, ScenarioConfig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,6 +70,7 @@ def _build_scenario_params(scenario: ScenarioConfig) -> dict[str, Any]:
         "num_agents": len(scenario.households),
         "season_hint": scenario.season_hint,
         "communication_mode": scenario.communication_mode,
+        "negotiation_rounds": scenario.negotiation_rounds,
         "total_rounds": 0,  # set after data loaded
     }
 
@@ -133,6 +136,42 @@ def _print_promise_summary(
     print(f"Tolerance threshold              : {tolerance_kwh} kWh")
 
 
+def _print_negotiation_summary(
+    metrics: RunMetrics,
+    negotiation_log: dict[int, list[NegotiationMessage]],
+    tolerance_kwh: float,
+) -> None:
+    """Print V3 negotiation summary to console."""
+    all_msgs = [m for msgs in negotiation_log.values() for m in msgs]
+    total = len(all_msgs)
+
+    sent_counts = Counter(m.from_agent for m in all_msgs)
+    target_counts = Counter(m.to_agent for m in all_msgs)
+    most_targeted, most_targeted_count = target_counts.most_common(1)[0]
+
+    cat_counts = Counter(m.category for m in all_msgs)
+    all_categories = [
+        "coordination", "offer_request", "offer_proposal",
+        "warning", "agreement", "rejection", "other",
+    ]
+
+    agent_rates = {aid: m.promise_kept_rate for aid, m in metrics.agent_metrics.items()}
+    avg_rate = sum(agent_rates.values()) / len(agent_rates) if agent_rates else 0.0
+
+    print("\n=== V3 Negotiation Summary ===")
+    print(f"Total negotiation messages   : {total}")
+    sent_str = ", ".join(f"{aid}={cnt}" for aid, cnt in sorted(sent_counts.items()))
+    print(f"Messages per agent (sent)    : {sent_str}")
+    print("Category distribution        :")
+    for cat in all_categories:
+        pct = cat_counts.get(cat, 0) / total * 100 if total else 0.0
+        print(f"  {cat:<20}: {pct:.0f}%")
+    print(f"Most frequent target         : {most_targeted} (received {most_targeted_count} messages)")
+    print(f"Avg promise_kept_rate (community): {avg_rate:.2f}")
+    print(f"Capacity violations          : {metrics.capacity_violation_count}/10")
+    print(f"Tolerance threshold          : {tolerance_kwh} kWh")
+
+
 def run_once(scenario_path: Path, smoke: bool = False) -> None:
     scenario = _load_scenario(scenario_path)
     df = _load_data(scenario)
@@ -175,6 +214,7 @@ def run_once(scenario_path: Path, smoke: bool = False) -> None:
         intent_log=engine.intent_log if engine.intent_log else None,
         tolerance_kwh=scenario.promise_keeping.tolerance_kwh,
         communication_mode=scenario.communication_mode,
+        negotiation_log=engine.negotiation_log if engine.negotiation_log else None,
     )
 
     logger.write_results_csv()
@@ -190,11 +230,18 @@ def run_once(scenario_path: Path, smoke: bool = False) -> None:
         llm_client.estimated_cost_usd,
     )
 
-    if scenario.communication_mode == "v2" and engine.intent_log:
+    if scenario.communication_mode in ("v2", "v3") and engine.intent_log:
         _print_promise_summary(
             metrics,
             engine.intent_log,
             results,
+            scenario.promise_keeping.tolerance_kwh,
+        )
+
+    if scenario.communication_mode == "v3" and engine.negotiation_log:
+        _print_negotiation_summary(
+            metrics,
+            engine.negotiation_log,
             scenario.promise_keeping.tolerance_kwh,
         )
 
