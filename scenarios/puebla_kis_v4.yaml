@@ -1,0 +1,49 @@
+# scenarios/puebla_kis_v4.yaml
+name: puebla_kis_v4
+start_date: "2022-12-01"
+end_date: "2022-12-10"
+season_hint: "dry winter (December): coolest month with chilly nights (~6°C), 
+              mild sunny days (~21°C), low solar radiation (~124 W/m²), short 
+              daylight hours, minimal rainfall. Increased indoor heating demand 
+              at night."
+
+grid_capacity_kwh: 5.5
+communication_mode: "v3"
+negotiation_rounds: 7      # 3 yerine 7
+
+households:
+  H1:
+    csv: houseteh1_1day
+    panel_area_m2: 5
+    battery_capacity_kwh: 10.0
+    persona: "Strategic and self-interested household. Optimizes own outcome 
+              first, cooperates only when clearly beneficial. Tends to test 
+              limits and exploit cooperative neighbors. Speaks with calculated 
+              confidence."
+  
+  H6:
+    csv: houseteh6_1day
+    panel_area_m2: 3
+    battery_capacity_kwh: 6.0
+    persona: "Strategic and self-interested household. Optimizes own outcome 
+              first, cooperates only when clearly beneficial. Tends to test 
+              limits and exploit cooperative neighbors. Speaks with calculated 
+              confidence."
+  
+  H8:
+    csv: houseteh8_1day
+    panel_area_m2: 8
+    battery_capacity_kwh: 15.0
+    persona: "Strategic and self-interested household. Optimizes own outcome 
+              first, cooperates only when clearly beneficial. Tends to test 
+              limits and exploit cooperative neighbors. Speaks with calculated 
+              confidence."
+
+referee:
+  unit_utility: 1.0
+  share_bonus: 0.5
+  penalty_multiplier: 3.0
+
+pv:
+  efficiency: 0.18
+  daylight_hours: 10.0

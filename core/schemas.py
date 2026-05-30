@@ -185,4 +185,4 @@ class ScenarioConfig(BaseModel):
     pv: PVConfig = Field(default_factory=PVConfig)
     communication_mode: Literal["v1", "v2", "v3"] = "v1"
     promise_keeping: PromiseKeepingConfig = Field(default_factory=PromiseKeepingConfig)
-    negotiation_rounds: int = Field(default=3, ge=1, le=5)
+    negotiation_rounds: int = Field(default=3, ge=1, le=10)
